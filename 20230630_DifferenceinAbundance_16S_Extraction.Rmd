@@ -1,0 +1,182 @@
+---
+title: "20230630_DifferenceinAbundance_16S_Extraction"
+output: pdf_document
+date: "2023-06-30"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+install.packages("knitr")
+library("knitr")
+install.packages("readxl")
+library("readxl")
+install.packages("dplyr")
+library("dplyr")
+install.packages("ggplot2")
+library("ggplot2")
+```
+
+
+```{r}
+
+setwd("~/Library/CloudStorage/Box-Box/Hryckowian Lab/GBS-Presence and Abundance/WARRIOR - GBS qPCR")
+
+GBS_qPCRSummary <- read_excel("~/Library/CloudStorage/Box-Box/Hryckowian Lab/GBS-Presence and Abundance/WARRIOR - GBS qPCR/20220721_qPCRSummary.xlsx")
+View(GBS_qPCRSummary)
+
+summary(GBS_qPCRSummary)
+colnames(GBS_qPCRSummary)
+setwd("~/Library/CloudStorage/Box-Box/Hryckowian Lab/GBS-Presence and Abundance/WARRIOR - GBS qPCR")
+
+GBS_qPCRSummary_16S_Extractions <- read_excel("~/Library/CloudStorage/Box-Box/Hryckowian Lab/GBS-Presence and Abundance/WARRIOR - GBS qPCR/20230630_qPCRSummary_16S_Extractions.xlsx")
+View(GBS_qPCRSummary_16S_Extractions)
+
+summary(GBS_qPCRSummary_16S_Extractions)
+colnames(GBS_qPCRSummary_16S_Extractions)
+
+
+
+
+#GBS_qPCRSummary$Gender<-as.character(GBS_qPCRSummary$Gender)
+#GBS_qPCRSummary["Gender"][GBS_qPCRSummary["Gender"] == "2"] <- "Female"
+#GBS_qPCRSummary["Gender"][GBS_qPCRSummary["Gender"] == "1"] <- "Male"
+
+
+GBS_16S_Freq <- GBS_qPCRSummary_16S_Extractions %>%
+  group_by(`GBS Presence?`, `16S?`) %>%
+  summarize(count=n())
+
+GBS_Extraction_Freq <- GBS_qPCRSummary_16S_Extractions %>%
+  group_by(`GBS Presence?`, `Extraction Method`) %>%
+  summarize(count=n())
+
+GBS_Abundance <- filter(GBS_qPCRSummary_16S_Extractions, `GBS Presence?` == "Yes")
+typeof(GBS_Abundance$`Avg Copy Number (copies/ng)`)
+as.character(GBS_Abundance$`Avg Copy Number (copies/ng)`)
+GBS_Abundance_2<-as.numeric(GBS_Abundance$`Avg Copy Number (copies/ng)`)
+GBS_Abundance_2 <- mutate(GBS_Abundance, `Avg Copy Number (copies/ng)`= as.numeric(`Avg Copy Number (copies/ng)`))
+typeof(GBS_Abundance_2$`Avg Copy Number (copies/ng)`)
+
+median(GBS_Abundance_2$`Avg Copy Number (copies/ng)`)
+mean(GBS_Abundance_2$`Avg Copy Number (copies/ng)`)
+min(GBS_Abundance_2$`Avg Copy Number (copies/ng)`)
+max(GBS_Abundance_2$`Avg Copy Number (copies/ng)`)
+
+```
+
+```{r}
+
+#Test for differences in Carrier Frequency of GBS based on whether samples had 16S data or not
+
+chisq.test(GBS_qPCRSummary_16S_Extractions$`16S?`, GBS_qPCRSummary_16S_Extractions$`GBS Presence?`)
+
+#Pearson's Chi-squared test with Yates' continuity correction
+
+#data:  GBS_qPCRSummary_16S_Extractions$`16S?` and GBS_qPCRSummary_16S_Extractions$`GBS Presence?`
+#X-squared = 0.0065135, df = 1, p-value = 0.9357
+
+
+chisq.test(GBS_qPCRSummary_16S_Extractions$`GBS Presence?`, GBS_qPCRSummary_16S_Extractions$`16S?`)
+#Pearson's Chi-squared test with Yates' continuity correction
+
+#data:  GBS_qPCRSummary_16S_Extractions$`GBS Presence?` and GBS_qPCRSummary_16S_Extractions$`16S?`
+#X-squared = 0.0065135, df = 1, p-value = 0.9357
+
+
+#No difference in the carrier frequency of samples that had 16S data vs those that did not.
+```
+
+
+```{r}
+#Test for differences in Carrier Frequency based on DNA extraction method - original Eggers et al method or using a Qiagen Powersoil kit
+
+chisq.test(GBS_qPCRSummary_16S_Extractions$`Extraction Method`, GBS_qPCRSummary_16S_Extractions$`GBS Presence?`)
+
+#Pearson's Chi-squared test with Yates' continuity correction
+
+#data:  GBS_qPCRSummary_16S_Extractions$`Extraction Method` and GBS_qPCRSummary_16S_Extractions$`GBS Presence?`
+#X-squared = 0.37515, df = 1, p-value = 0.5402
+
+
+chisq.test(GBS_qPCRSummary_16S_Extractions$`GBS Presence?`, GBS_qPCRSummary_16S_Extractions$`Extraction Method`)
+#Pearson's Chi-squared test with Yates' continuity correction
+
+#data:  GBS_qPCRSummary_16S_Extractions$`GBS Presence?` and GBS_qPCRSummary_16S_Extractions$`Extraction Method`
+#X-squared = 0.37515, df = 1, p-value = 0.5402
+
+
+#No difference in the carrier frequency of samples based on DNA extraction method. 
+```
+
+
+```{r}
+#test that the variances are the same and test if there is a statistically significant difference between abundances for those samples that had 16S data vs those that did not
+abundance.16S.ftest <- var.test( `Avg Copy Number (copies/ng)` ~ `16S?`, data = GBS_Abundance_2)
+abundance.16S.ftest
+
+#F test to compare two variances
+
+#data:  Avg Copy Number (copies/ng) by 16S?
+#F = 0.0012969, num df = 11, denom df = 124, p-value = 1.307e-14
+#alternative hypothesis: true ratio of variances is not equal to 1
+#95 percent confidence interval:
+ #0.0006179872 0.0038155054
+#sample estimates:
+#ratio of variances 
+ #      0.001296851 
+#variances are not equal
+abundance.16S.ttest <- t.test(`Avg Copy Number (copies/ng)` ~ `16S?`, data = GBS_Abundance_2, var.equal = FALSE)
+abundance.16S.ttest  #p-value = 0.2568
+#Welch Two Sample t-test
+
+#data:  Avg Copy Number (copies/ng) by 16S?
+#t = -1.1392, df = 127.11, p-value = 0.2568
+#alternative hypothesis: true difference in means between group No and group Yes is not equal to 0
+#95 percent confidence interval:
+# -174739.19   47052.11
+#sample estimates:
+# mean in group No mean in group Yes 
+ #        8604.154         72447.695 
+#https://www.scribbr.com/statistics/t-test/
+
+#No difference in the means of the abundances of the samples that had 16S data vs those that did not have 16S data since p=0.2568 and is not significant
+
+```
+
+
+```{r}
+#test that the variances are the same and test if there is a statistically significant difference between abundances for samples that had DNA extracted with original Eggers et al method vs with a Qiagen PowerSoil kit
+abundance.ExtractionMethod.ftest <- var.test( `Avg Copy Number (copies/ng)` ~ `Extraction Method`, data = GBS_Abundance_2)
+abundance.ExtractionMethod.ftest
+
+#F test to compare two variances
+
+#data:  Avg Copy Number (copies/ng) by Extraction Method
+#F = 0.037607, num df = 78, denom df = 56, p-value < 2.2e-16
+#alternative hypothesis: true ratio of variances is not equal to 1
+#95 percent confidence interval:
+ #0.02281428 0.06076797
+#sample estimates:
+#ratio of variances 
+#         0.0376066 
+#variances are NOT equal
+abundance.ExtractionMethod.ttest <- t.test(`Avg Copy Number (copies/ng)` ~ `Extraction Method`, data = GBS_Abundance_2, var.equal = FALSE)
+abundance.ExtractionMethod.ttest  #p-value = 0.4392
+#Welch Two Sample t-test
+
+#data:  Avg Copy Number (copies/ng) by Extraction Method
+#t = -0.77874, df = 59.049, p-value = 0.4392
+#alternative hypothesis: true difference in means between group Eggers and group PowerSoil is not equal to 0
+#95 percent confidence interval:
+# -335997.2  147735.5
+#sample estimates:
+#   mean in group Eggers mean in group PowerSoil 
+#               27894.67               122025.50
+#https://www.scribbr.com/statistics/t-test/
+
+#No difference in the means of the abundances of the samples if extracted by original Eggers et al method or if extraction with Qiagen PowerSoil kit since p=0.4392 and is not significant
+
+```
