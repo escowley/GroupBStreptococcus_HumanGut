@@ -1,0 +1,223 @@
+---
+title: "20230310_GBS_OddsRatios"
+output: pdf_document
+date: "2023-03-10"
+author: Elise S. Cowley
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#install.packages("knitr")
+library("knitr")
+#install.packages("readxl")
+library("readxl")
+#install.packages("dplyr")
+library("dplyr")
+#install.packages("ggplot2")
+library("ggplot2")
+install.packages("stringr")          # Install stringr package
+library("stringr")                   # Load stringr
+```
+
+```{r}
+
+setwd("~/Library/CloudStorage/Box-Box/Hryckowian Lab/GBS-Presence and Abundance/July2022-Stats/20221213 - Fay - Secondary Analysis - 3 Decimal")
+
+GBS_Model1_Binary <- read_excel("~/Library/CloudStorage/Box-Box/Hryckowian Lab/GBS-Presence and Abundance/July2022-Stats/20221213 - Fay - Secondary Analysis - 3 Decimal/FDR corrected/20230310_MultivariateSummaries_OddsRatioPlot.xlsx", sheet = "Model 1 - Binary")
+View(GBS_Model1_Binary)
+
+GBS_Model2_Binary <- read_excel("~/Library/CloudStorage/Box-Box/Hryckowian Lab/GBS-Presence and Abundance/July2022-Stats/20221213 - Fay - Secondary Analysis - 3 Decimal/FDR corrected/20230310_MultivariateSummaries_OddsRatioPlot.xlsx", sheet = "Model 2 - Binary")
+
+GBS_Model3_Binary <- read_excel("~/Library/CloudStorage/Box-Box/Hryckowian Lab/GBS-Presence and Abundance/July2022-Stats/20221213 - Fay - Secondary Analysis - 3 Decimal/FDR corrected/20230310_MultivariateSummaries_OddsRatioPlot.xlsx", sheet = "Model 3 - Binary")
+```
+
+```{r}
+GBS_Model1_Continuous <- read_excel("~/Library/CloudStorage/Box-Box/Hryckowian Lab/GBS-Presence and Abundance/July2022-Stats/20221213 - Fay - Secondary Analysis - 3 Decimal/FDR corrected/20230310_MultivariateSummaries_OddsRatioPlot.xlsx", sheet = "Model 1 - Continuous")
+#View(GBS_Model1_Continuous)
+
+GBS_Model2_Continuous <- read_excel("~/Library/CloudStorage/Box-Box/Hryckowian Lab/GBS-Presence and Abundance/July2022-Stats/20221213 - Fay - Secondary Analysis - 3 Decimal/FDR corrected/20230310_MultivariateSummaries_OddsRatioPlot.xlsx", sheet = "Model 2 - Continuous")
+
+GBS_Model3_Continuous <- read_excel("~/Library/CloudStorage/Box-Box/Hryckowian Lab/GBS-Presence and Abundance/July2022-Stats/20221213 - Fay - Secondary Analysis - 3 Decimal/FDR corrected/20230310_MultivariateSummaries_OddsRatioPlot.xlsx", sheet = "Model 3 - Continuous")
+```
+
+
+```{r}
+Model1_Binary_OddsRatios <- ggplot(GBS_Model1_Binary, aes(x = OR, y = `Variable Description`)) + 
+   # geom_vline(aes(xintercept = 0), size = .25, linetype = "dashed") + 
+    #geom_errorbarh(aes(xmax = LB95, xmin = UB95), size = .5, height = 
+        #            .2, color = "gray50") +
+    geom_point(size = 3.5, color = "orange") +
+    theme_bw()+
+    theme(panel.grid.minor = element_blank()) +
+    ylab("") +
+    xlab("Odds ratio") + 
+    ggtitle("Feeding method and risk of obesity in cats")
+Model1_Binary_OddsRatios
+```
+```{r Model1BinaryORPlot}
+GBS_Model1_Binary$`Variable Description` <- factor(GBS_Model1_Binary$`Variable Description`, levels = GBS_Model1_Binary$`Variable Description`)
+Model1_BinaryOR_Plot<- ggplot(GBS_Model1_Binary, aes(y = `Variable Description`, x = log(OR))) +
+  geom_point(shape = 18, size = 8, color="#435F90", alpha = 0.8) +  
+  geom_errorbarh(aes(xmin = log(LB95), xmax = log(UB95)), height = 0.25, alpha = 0.7) +
+  geom_vline(xintercept = 0, color = "#514289", linetype = "dashed", cex = 0.7) +
+  #scale_y_continuous(name = "", breaks=1:4, labels = GBS_Model1_Binary$label, trans = "reverse") +
+  xlab("Odds Ratio (95% CI)") + 
+  ylab(" ") + 
+  theme_bw() +
+  #scale_y_reverse()+
+  #scale_x_continuous(trans = "log10")+
+  theme(panel.border = element_blank(),
+        panel.background = element_blank(),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        plot.title = element_text(hjust = 0.5),
+        axis.line = element_line(colour = "black"),
+        axis.text.y = element_text(size = 10, colour = "black"), #, angle=45, vjust=1, hjust=1),
+        axis.text.x.bottom = element_text(size = 12, colour = "black"),
+        axis.title.x = element_text(size = 12, colour = "black")) +
+  ggtitle("Odds Ratios for Model 1 Binary Outcome")+
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 32))
+Model1_BinaryOR_Plot
+ggsave("20230315_GBS_Model1_BinaryOR_Plot.pdf", plot = Model1_BinaryOR_Plot, width = 7, height = 7)
+```
+
+```{r Model2BinaryORPlot}
+GBS_Model2_Binary$`Variable Description` <- factor(GBS_Model2_Binary$`Variable Description`, levels = GBS_Model2_Binary$`Variable Description`)
+Model2_BinaryOR_Plot<- ggplot(GBS_Model2_Binary, aes(y = `Variable Description`, x = log(OR))) +
+  geom_point(shape = 18, size = 8, color="#435F90", alpha = 0.8) +  
+  geom_errorbarh(aes(xmin = log(LB95), xmax = log(UB95)), height = 0.25, alpha = 0.7) +
+  geom_vline(xintercept = 0, color = "#514289", linetype = "dashed", cex = 0.7) +
+  #scale_y_continuous(name = "", breaks=1:4, labels = GBS_Model1_Binary$label, trans = "reverse") +
+  xlab("Odds Ratio (95% CI)") + 
+  ylab(" ") + 
+  theme_bw() +
+  #scale_y_reverse()+
+  #scale_x_continuous(trans = "log10")+
+  theme(panel.border = element_blank(),
+          panel.background = element_blank(),
+          panel.grid.major = element_blank(), 
+          panel.grid.minor = element_blank(), 
+          plot.title = element_text(hjust = 0.5),
+          axis.line = element_line(colour = "black"),
+          axis.text.y = element_text(size = 10, colour = "black"), #, angle=45, vjust=1, hjust=1),
+          axis.text.x.bottom = element_text(size = 12, colour = "black"),
+          axis.title.x = element_text(size = 12, colour = "black")) +
+  ggtitle("Odds Ratios for Model 2 Binary Outcome")+
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 25))
+Model2_BinaryOR_Plot
+ggsave("20230315_GBS_Model2_BinaryOR_Plot.pdf", plot = Model2_BinaryOR_Plot, width = 7, height = 7)
+```
+
+```{r Model3BinaryORPlot}
+GBS_Model3_Binary$`Variable Description` <- factor(GBS_Model3_Binary$`Variable Description`, levels = GBS_Model3_Binary$`Variable Description`)
+Model3_BinaryOR_Plot<- ggplot(GBS_Model3_Binary, aes(y = `Variable Description`, x = log(OR))) +
+  geom_point(shape = 18, size = 8, color="#435F90", alpha = 0.8) +  
+  geom_errorbarh(aes(xmin = log(LB95), xmax = log(UB95)), height = 0.25, alpha = 0.7) +
+  geom_vline(xintercept = 0, color = "#514289", linetype = "dashed", cex = 0.7) +
+  #scale_y_continuous(name = "", breaks=1:4, labels = GBS_Model1_Binary$label, trans = "reverse") +
+  xlab("Odds Ratio (95% CI)") + 
+  ylab(" ") + 
+  theme_bw() +
+  #scale_y_reverse()+
+  #scale_x_continuous(trans = "log10")+
+  theme(panel.border = element_blank(),
+        panel.background = element_blank(),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        plot.title = element_text(hjust = 0.5),
+        axis.line = element_line(colour = "black"),
+        axis.text.y = element_text(size = 10, colour = "black"), #, angle=45, vjust=1, hjust=1),
+        axis.text.x.bottom = element_text(size = 12, colour = "black"),
+        axis.title.x = element_text(size = 12, colour = "black")) +
+  ggtitle("Odds Ratios for Model 3 Binary Outcome")+
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 32))
+Model3_BinaryOR_Plot
+ggsave("20230315_GBS_Model3_BinaryOR_Plot.pdf", plot = Model3_BinaryOR_Plot, width = 7, height = 7)
+```
+
+
+```{r Model1ContinuousORPlot}
+GBS_Model1_Continuous$`Variable Description` <- factor(GBS_Model1_Continuous$`Variable Description`, levels = GBS_Model1_Continuous$`Variable Description`)
+Model1_ContinuousOR_Plot<- ggplot(GBS_Model1_Continuous, aes(y = `Variable Description`, x = Coef.)) +
+  geom_point(shape = 18, size = 8, color="#415F90", alpha = 0.8) +  
+  geom_errorbarh(aes(xmin = `95% LB`, xmax = `95% UB`), height = 0.25, alpha = 0.7) +
+  geom_vline(xintercept = 0, color = "#514289", linetype = "dashed", cex = 0.7) +
+  #scale_y_continuous(name = "", breaks=1:4, labels = GBS_Model1_Continuous$label, trans = "reverse") +
+  xlab("Odds Ratio (95% CI)") + 
+  ylab(" ") + 
+  theme_bw() +
+  #scale_y_reverse()+
+  #scale_x_continuous(trans = "log10")+
+  theme(panel.border = element_blank(),
+        panel.background = element_blank(),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        plot.title = element_text(hjust = 0.5),
+        axis.line = element_line(colour = "black"),
+        axis.text.y = element_text(size = 10, colour = "black"), #, angle=45, vjust=1, hjust=1),
+        axis.text.x.bottom = element_text(size = 12, colour = "black"),
+        axis.title.x = element_text(size = 12, colour = "black")) +
+  ggtitle("Odds Ratios for Model 1 Continuous Outcome")+
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 12))
+Model1_ContinuousOR_Plot
+ggsave("20230315_GBS_Model1_ContinuousOR_Plot.pdf", plot = Model1_ContinuousOR_Plot, width = 7, height = 7)
+```
+
+
+```{r Model2ContinuousORPlot}
+GBS_Model2_Continuous$`Variable Description` <- factor(GBS_Model2_Continuous$`Variable Description`, levels = GBS_Model2_Continuous$`Variable Description`)
+Model2_ContinuousOR_Plot<- ggplot(GBS_Model2_Continuous, aes(y = `Variable Description`, x = Coef.)) +
+  geom_point(shape = 18, size = 8, color="#415F90", alpha = 0.8) +  
+  geom_errorbarh(aes(xmin = `95% LB`, xmax = `95% UB`), height = 0.25, alpha = 0.7) +
+  geom_vline(xintercept = 0, color = "#514289", linetype = "dashed", cex = 0.7) +
+  #scale_y_continuous(name = "", breaks=1:4, labels = GBS_Model2_Continuous$label, trans = "reverse") +
+  xlab("Odds Ratio (95% CI)") + 
+  ylab(" ") + 
+  theme_bw() +
+  #scale_y_reverse()+
+  #scale_x_continuous(trans = "log10")+
+  theme(panel.border = element_blank(),
+        panel.background = element_blank(),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        plot.title = element_text(hjust = 0.5),
+        axis.line = element_line(colour = "black"),
+        axis.text.y = element_text(size = 10, colour = "black"), #, angle=45, vjust=1, hjust=1),
+        axis.text.x.bottom = element_text(size = 12, colour = "black"),
+        axis.title.x = element_text(size = 12, colour = "black")) +
+  ggtitle("Odds Ratios for Model 2 Continuous Outcome")+
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 12))
+Model2_ContinuousOR_Plot
+ggsave("20230315_GBS_Model2_ContinuousOR_Plot.pdf", plot = Model2_ContinuousOR_Plot, width = 7, height = 7)
+```
+
+
+```{r Model3ContinuousORPlot}
+GBS_Model3_Continuous$`Variable Description` <- factor(GBS_Model3_Continuous$`Variable Description`, levels = GBS_Model3_Continuous$`Variable Description`)
+Model3_ContinuousOR_Plot<- ggplot(GBS_Model3_Continuous, aes(y = `Variable Description`, x = Coef.)) +
+  geom_point(shape = 18, size = 8, color="#415F90", alpha = 0.8) +  
+  geom_errorbarh(aes(xmin = `95% LB`, xmax = `95% UB`), height = 0.25, alpha = 0.7) +
+  geom_vline(xintercept = 0, color = "#514289", linetype = "dashed", cex = 0.7) +
+  #scale_y_continuous(name = "", breaks=1:4, labels = GBS_Model3_Continuous$label, trans = "reverse") +
+  xlab("Odds Ratio (95% CI)") + 
+  ylab(" ") + 
+  theme_bw() +
+  #scale_y_reverse()+
+  #scale_x_continuous(trans = "log10")+
+  theme(panel.border = element_blank(),
+        panel.background = element_blank(),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        plot.title = element_text(hjust = 0.5),
+        axis.line = element_line(colour = "black"),
+        axis.text.y = element_text(size = 10, colour = "black"), #, angle=45, vjust=1, hjust=1),
+        axis.text.x.bottom = element_text(size = 12, colour = "black"),
+        axis.title.x = element_text(size = 12, colour = "black")) +
+  ggtitle("Odds Ratios for Model 3 Continuous Outcome")+
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 25))
+Model3_ContinuousOR_Plot
+ggsave("20230315_GBS_Model3_ContinuousOR_Plot.pdf", plot = Model3_ContinuousOR_Plot, width = 7, height = 7)
+```
