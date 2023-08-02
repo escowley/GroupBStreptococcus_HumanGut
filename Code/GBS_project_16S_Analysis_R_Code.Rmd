@@ -1,0 +1,1111 @@
+---
+title: "GBS_project"
+output: html_document
+date: '2022-07-13'
+---
+
+#Setup and package load
+```{r}
+getwd ()
+setwd("/Users/ibrahimzuniga/Documents/SuenLab/GBS")
+#install.packages("esquisse")
+library(ggsci)
+library(broom)
+library("esquisse")
+#install.packages("remotes")
+library(remotes)
+#install.packages(("devtools"))
+#install.packages("BiocManager")
+#BiocManager::install("microbiome")
+#BiocManager::install("multtest")
+library(devtools)
+#devtools::install_github("gauravsk/ranacapa")
+library(ranacapa)
+library(conflicted)
+#devtools::install_github("mahendra-mariadassou/phyloseq-extended")
+library("phyloseq.extended")
+library("microbiome")
+library("dplyr")
+library("tidyr")
+conflict_prefer("filter", "dplyr")
+conflict_prefer("select", "dplyr")
+conflict_prefer("mutate", "dplyr")
+conflict_prefer("recode", "dplyr")
+conflict_prefer("rename", "dplyr")
+conflict_prefer("rownames", "base")
+library("ggplot2")
+library("phyloseq")
+library("vegan")
+library("RColorBrewer")
+#install.packages("yarrr")
+library("yarrr") #Not working. Error (Error in value[[3L]](cond) : Package ‘Matrix’ version 1.3.3 cannot be unloaded: Error in unloadNamespace(package) : namespace ‘Matrix’ is imported by ‘survival’, ‘mgcv’, ‘biomformat’ so cannot be unloaded)
+library(biomformat)
+library(MeMoBootR)
+#install.packages("ggpubr")
+library(ggpubr)
+library(cowplot)
+library(gridExtra)
+library(lattice)
+library(MASS)
+library(pscl) # alternatively can use package ZIM for zero-inflated models
+#install.packages("lmtest")
+library(lmtest)
+#install.packages('qwraps2')
+library(qwraps2)
+#install.packages("psych")
+library(psych)
+library(ggrepel)
+library(ANCOMBC)
+library(EnhancedVolcano)
+library("DESeq2")
+library(hrbrthemes)
+library(gcookbook)
+# download miProfile and miLineage from Tang lab (https://tangzheng1.github.io/tanglab/software.html)
+#devtools::install("/Users/ibrahimzuniga/Downloads/miLineage_v3.1/miLineage/") # install local R package
+#install.packages("miLineage")
+library(miLineage)
+#devtools::install_github("david-barnett/microViz@0.9.3")
+library(microViz)
+```
+
+#GET data
+```{r}
+QWAR_sub = readRDS("QWAR_sub_save") 
+QWAR_sub
+
+
+# saveRDS(QWAR_sub_GBS, file="QWARSUB.phy")
+
+
+sample_data(QWAR_sub)
+
+
+QWAR_norm <- rarefy_even_depth(QWAR_sub, sample.size = min(sample_sums(QWAR_sub)),rngseed = 8765, replace = TRUE, trimOTUs = TRUE, verbose = TRUE)
+
+
+#GSB DATA LOAD
+GBS_raw_data <- read.table(file="20220721_qPCRSummary.txt", sep = "\t", header = T, dec = ".")
+nrow(GBS_raw_data)
+
+GBS_raw_data$Avg.Copy.Number..copies.ng. <- as.numeric(as.numeric(gsub(",", "", GBS_raw_data$Avg.Copy.Number..copies.ng.)))
+GBS_raw_data$Avg_Copy_Number_.copies.ng._zeros<- as.numeric(as.numeric(gsub(",", "", GBS_raw_data$Avg_Copy_Number_.copies.ng._zeros)))
+
+```
+
+
+
+
+#LINEAR REGRESSIONS
+```{r}
+
+#CALCULATE ALPHA DIVERSITY
+ALPHAQWAR_demo = phyloseq::estimate_richness(QWAR_norm, measures = c("Shannon", "Observed","InvSimpson"))
+ALPHAQWAR_demo_data = data.frame(sample_data(QWAR_norm))
+nrow(ALPHAQWAR_demo_data)
+
+ALPHAQWAR_demo_data_short<- ALPHAQWAR_demo_data %>%
+  dplyr::select(SPID,X.SampleID)
+GBS_raw_data$Avg_Copy_Number_.copies.ng._zeros
+
+#JOIN MICROBIOME AND GBS DATA
+joined_data <- ALPHAQWAR_demo_data_short %>%
+  inner_join(., GBS_raw_data, by="SPID") %>%
+  dplyr::select(.,-WIMB_.Manifest.edition.,X.SampleID) %>%
+  dplyr::rename(.,GBS_pre = GBS_Presence, Avgcopy_number = Avg.Copy.Number..copies.ng., Avgcopy_number_zeros = Avg_Copy_Number_.copies.ng._zeros)
+
+
+#CHECK merge of data
+nrow(ALPHAQWAR_demo_data)
+nrow(GBS_raw_data)
+nrow(joined_data)
+
+#Create file for regressions
+GBS_Data <- ALPHAQWAR_demo_data %>%
+  mutate(Shannon=ALPHAQWAR_demo$Shannon,Observed=ALPHAQWAR_demo$Observed, InvSimpson=ALPHAQWAR_demo$InvSimpson) %>%
+  inner_join(.,joined_data,by="SPID")
+
+#Should be 692
+nrow(GBS_Data)
+```
+
+###Linear regressions###
+```{r}
+#Define outliers
+
+reg_InvSimpson_zero <- lm(InvSimpson ~ Avgcopy_number_zeros,  data=GBS_Data)
+summary(reg_InvSimpson_zero)
+
+reg_InvSimpson_nozero <- lm(InvSimpson ~ Avgcopy_number,  data=GBS_Data)
+summary(reg_InvSimpson_nozero)
+
+
+Histogram <- GBS_Data %>%
+  dplyr::filter(GBS_pre=="Yes")
+
+hist(Histogram$Avgcopy_number)
+
+
+out <- boxplot.stats(Histogram$Avgcopy_number)$out
+length(out)
+min(out)
+max(out)
+sort(out)
+out_ind <- which(Histogram$Avgcopy_number %in% c(out))
+out_ind
+
+boxplot(Histogram$Avgcopy_number,
+  ylab = "Avg copy number",
+  main = "Outliers GBS"
+)
+mtext(paste("Outliers: ", paste(out, collapse = ", ")))
+
+
+#Eliminate first three outliers 
+Histogram_nooutliers_first3 <- GBS_Data %>%
+  dplyr::filter(Avgcopy_number < 100000)
+
+Histogram_nooutliers_first3_nozero <- GBS_Data %>%
+  filter(GBS_pre=="Yes") %>%
+  filter(Avgcopy_number < 100000)
+
+nrow(Histogram)
+nrow(Histogram_nooutliers_first3)
+hist(Histogram_nooutliers_first3$Avgcopy_number)
+
+boxplot(Histogram_nooutliers_first3$Avgcopy_number,
+  ylab = "Avg copy number",
+  main = "No_Outliers GBS"
+)
+
+out <- boxplot.stats(Histogram_nooutliers$Avgcopy_number)$out
+min(out)
+
+Histogram_nooutliers_first3$Avgcopy_number_zeros
+
+reg_InvSimpson_zero <- lm(InvSimpson ~ Avgcopy_number_zeros,  data=Histogram_nooutliers_first3)
+summary(reg_InvSimpson_zero)
+
+reg_InvSimpson_nozero <- lm(InvSimpson ~ Avgcopy_number,  data=Histogram_nooutliers_first3_nozero)
+summary(reg_InvSimpson_nozero)
+
+
+
+#Eliminate first group of outliers 
+Histogram_nooutliers_WITHZERO <- GBS_Data %>%
+  dplyr::filter(Avgcopy_number < 1767)
+
+Histogram_nooutliers <- GBS_Data %>%
+  dplyr::filter(GBS_pre=="Yes") %>%
+  dplyr::filter(Avgcopy_number < 1767)
+
+nrow(Histogram)
+nrow(Histogram_nooutliers)
+hist(Histogram_nooutliers$Avgcopy_number)
+
+boxplot(Histogram_nooutliers$Avgcopy_number,
+  ylab = "Avg copy number",
+  main = "No_Outliers GBS"
+)
+
+out <- boxplot.stats(Histogram_nooutliers$Avgcopy_number)$out
+min(out)
+
+reg_InvSimpson_zero <- lm(InvSimpson ~ Avgcopy_number_zeros,  data=Histogram_nooutliers_WITHZERO)
+summary(reg_InvSimpson_zero)
+
+reg_InvSimpson_nozero <- lm(InvSimpson ~ Avgcopy_number,  data=Histogram_nooutliers)
+summary(reg_InvSimpson_nozero)
+
+#Eliminate all outliers 
+Histogram_nooutliers2 <- GBS_Data %>%
+  dplyr::filter(GBS_pre=="Yes") %>%
+  dplyr::filter(Avgcopy_number < 152.55)
+
+Histogram_nooutliers2_withzero <- GBS_Data %>%
+  dplyr::filter(Avgcopy_number < 152.55)
+
+nrow(Histogram)
+nrow(Histogram_nooutliers2)
+hist(Histogram_nooutliers2$Avgcopy_number)
+125-68
+boxplot(Histogram_nooutliers2$Avgcopy_number,
+  ylab = "Avg copy number",
+  main = "No_Outliers GBS"
+)
+
+out <- boxplot.stats(Histogram_nooutliers2$Avgcopy_number)$out
+min(out)
+length(out)
+
+reg_InvSimpson_zero <- lm(InvSimpson ~ Avgcopy_number_zeros,  data=Histogram_nooutliers2_withzero)
+summary(reg_InvSimpson_zero)
+
+reg_InvSimpson_nozero <- lm(InvSimpson ~ Avgcopy_number,  data=Histogram_nooutliers2)
+summary(reg_InvSimpson_nozero)
+
+#Linear regressions presence/absence
+
+#Format antibiotic variable
+GBS_Data <- GBS_Data %>% mutate(HMI070 = recode(HMI070, "[1] Yes" = "Yes", "[2] No" = "No"))
+GBS_Data$HMI070 <- as.factor(GBS_Data$HMI070)
+GBS_Data$HMI070 <- relevel(GBS_Data$HMI070, ref = "No")
+levels(GBS_Data$HMI070)
+levels(GBS_Data$HMI070)[levels(GBS_Data$HMI070)=="[.D] Don't know"] <-"[. ] Missing"
+
+#Make avg_copy number numeric
+GBS_Data_Abund <- GBS_Data %>% 
+  filter(Avgcopy_number != "N/A")
+nrow(GBS_Data_Abund)
+
+GBS_Data_Abund$Avgcopy_number <- as.numeric(as.numeric(gsub(",", "", GBS_Data_Abund$Avgcopy_number)))
+
+reg_Shannon <- lm(Shannon ~ GBS_pre,  data=GBS_Data)
+summary(reg_Shannon)
+reg_table_GBS <- cbind(tidy(reg_Shannon)[2,2:5],as.data.frame(confint(reg_Shannon))[2,1:2],tidy(reg_Shannon)[2,5])
+reg_Observed <- lm(Observed ~ GBS_pre,  data=GBS_Data)
+summary(reg_Observed)
+reg_table_GBS <- rbind(reg_table_GBS, cbind(tidy(reg_Observed)[2,2:5],as.data.frame(confint(reg_Observed))[2,1:2],tidy(reg_Observed)[2,5]))
+reg_InvSimpson <- lm(InvSimpson ~ GBS_pre,  data=GBS_Data)
+summary(reg_InvSimpson)
+reg_table_GBS <- rbind(reg_table_GBS, cbind(tidy(reg_InvSimpson)[2,2:5],as.data.frame(confint(reg_InvSimpson))[2,1:2],tidy(reg_InvSimpson)[2,5]))
+write.table(reg_table_GBS, file = "table_reg_diversity_pre_abs.txt", sep = "\t")
+
+
+#Linear regressions with avg_cpy number
+reg_Shannon <- lm(Shannon ~ Avgcopy_number,  data=GBS_Data_Abund)
+summary(reg_Shannon)
+reg_table_GBS_avgcopy <- cbind(tidy(reg_Shannon)[2,2:5],as.data.frame(confint(reg_Shannon))[2,1:2],tidy(reg_Shannon)[2,5])
+reg_Observed <- lm(Observed ~ Avgcopy_number,  data=GBS_Data_Abund)
+summary(reg_Observed)
+reg_table_GBS_avgcopy <- rbind(reg_table_GBS_avgcopy, cbind(tidy(reg_Observed)[2,2:5],as.data.frame(confint(reg_Observed))[2,1:2],tidy(reg_Observed)[2,5]))
+reg_InvSimpson <- lm(InvSimpson ~ Avgcopy_number,  data=GBS_Data_Abund)
+summary(reg_InvSimpson)
+reg_table_GBS_avgcopy <- rbind(reg_table_GBS_avgcopy, cbind(tidy(reg_InvSimpson)[2,2:5],as.data.frame(confint(reg_InvSimpson))[2,1:2],tidy(reg_InvSimpson)[2,5]))
+
+#Avg_copynumber with antibiotic usage
+reg_avgcopy_antib <- lm(Avgcopy_number ~ HMI070,  data=GBS_Data_Abund)
+summary(reg_avgcopy_antib)
+reg_table_GBS_avgcopy <- rbind(reg_table_GBS_avgcopy, cbind(tidy(reg_avgcopy_antib)[2:3,2:5],as.data.frame(confint(reg_avgcopy_antib))[2:3,1:2],tidy(reg_avgcopy_antib)[2:3,5]))
+
+write.table(reg_table_GBS_avgcopy, file = "table_reg_diversity_avgcopy.txt", sep = "\t")
+```
+
+#Regressions EHI
+```{r}
+
+
+reg_EHIconti_Cop <- lm(EHI_CBG_RANK_ACS2015 ~ Avgcopy_number,  data=GBS_Data)
+summary(reg_EHIconti_Cop)
+reg_EHIconti_pre <- lm(EHI_CBG_RANK_ACS2015 ~ GBS_pre,  data=GBS_Data)
+summary(reg_EHIconti_pre)
+reg_EHIconti_avgEHI <- lm(Avgcopy_number~avg_EHI,  data=GBS_Data)
+summary(reg_EHIconti_avgEHI)
+
+#INCOME
+reg_EHIconti_Cop_income <- lm(EHI_CBG_INCOME_ACS2015 ~ Avgcopy_number,  data=GBS_Data)
+summary(reg_EHIconti_Cop_income)
+reg_EHIconti_pre_income <- lm(EHI_CBG_INCOME_ACS2015 ~ GBS_pre,  data=GBS_Data)
+summary(reg_EHIconti_pre_income)
+reg_EHIconti_avgEHI_income <- lm(Avgcopy_number~avg_EHI_INCOME,  data=GBS_Data)
+summary(reg_EHIconti_avgEHI_income)
+
+#Crowded housing.
+reg_EHIconti_Cop_crow <- lm(EHI_CBG_CROWDED_ACS2015 ~ Avgcopy_number,  data=GBS_Data)
+summary(reg_EHIconti_Cop_crow)
+reg_EHIconti_pre_crow <- lm(EHI_CBG_CROWDED_ACS2015 ~ GBS_pre,  data=GBS_Data)
+summary(reg_EHIconti_pre_crow)
+reg_EHIconti_avgEHI_crow <- lm(Avgcopy_number~avg_EHI_CROWDED,  data=GBS_Data)
+summary(reg_EHIconti_avgEHI_crow)
+
+#Poverty
+reg_EHIconti_Cop_pov <- lm(EHI_CBG_POVERTY_ACS2015 ~ Avgcopy_number,  data=GBS_Data)
+summary(reg_EHIconti_Cop_pov)
+reg_EHIconti_pre_pov <- lm(EHI_CBG_POVERTY_ACS2015 ~ GBS_pre,  data=GBS_Data)
+summary(reg_EHIconti_pre_pov)
+reg_EHIconti_avgEHI_pov <- lm(Avgcopy_number~avg_EHI_POVERTY,  data=GBS_Data)
+summary(reg_EHIconti_avgEHI_pov)
+
+#Education
+reg_EHIconti_Cop_edu <- lm(EHI_CBG_EDUCATION_ACS2015 ~ Avgcopy_number,  data=GBS_Data)
+summary(reg_EHIconti_Cop_edu)
+reg_EHIconti_pre_edu <- lm(EHI_CBG_EDUCATION_ACS2015 ~ GBS_pre,  data=GBS_Data)
+summary(reg_EHIconti_pre_edu)
+reg_EHIconti_avgEHI_edu <- lm(Avgcopy_number~avg_EHI_EDUCATION,  data=GBS_Data)
+summary(reg_EHIconti_avgEHI_edu)
+
+```
+
+
+
+#ANCOM-BC
+```{r}
+
+#Deseq likes varialbes as factor
+# sample_data(test)$avg_EHI <- as.factor(sample_data(test)$avg_EHI)
+# sample_data(test)$FifteenPEHI <- as.factor(sample_data(test)$FifteenPEHI)
+
+# #Create list of SPID codes
+# SPID_GBS <- GBS_Data$SPID
+# 
+# #Subset phy object for SPID in GBS data
+# QWAR_sub_GBS <- phyloseq::subset_samples(QWAR_sub, SPID %in% SPID_GBS)
+
+QWAR_sub_GBS <- readRDS("QWARSUB.phy")
+
+#Add GBS prevalence to phy object (has to be the same number of colums)
+
+sample_data_GBS <- sample_data(QWAR_sub_GBS)
+
+QWAR_sub_GBS <- QWAR_sub_GBS %>%
+  ps_mutate(GBS_pre = GBS_Data$GBS_pre, Avgcopy_number = GBS_Data$Avgcopy_number, Avgcopy_number_zeros = GBS_Data$Avgcopy_number_zeros)
+
+#GENUS
+
+QWAR_sub_GBS_genus <- tax_glom(QWAR_sub_GBS, taxrank="Genus")
+
+QWAR_sub_GBS_genus
+#saveRDS(test_genus, "Genus_forANCOM.phy")
+# Genus_taxa = readRDS("Genus_forANCOM.phy") 
+# test_genus = readRDS("Genus_forANCOM.phy") 
+# 
+# Treads <- sample_sums(test_genus)
+# 
+# Treads <- as.data.frame(table)
+
+out_genus = ancombc(phyloseq = QWAR_sub_GBS_genus,
+                formula = "GBS_pre",
+                p_adj_method = "BH",
+                zero_cut = 0.975,
+                lib_cut = 0, #no filtering cause is grouped
+                group = NULL,
+                struc_zero = FALSE,
+                neg_lb = FALSE,
+                tol = 1e-5,
+                max_iter = 100,
+                conserve = TRUE,
+                alpha = 0.1,
+                global = F)
+
+res_genus = out_genus$res
+sigtabG50_GBS <- as.data.frame(res_genus)
+colnames(sigtabG50_GBS) <- c("beta","se","W","pval", "qval", "diff_abun")
+sigtabG50_GBS = cbind(as(sigtabG50_GBS, "data.frame"), as(tax_table(QWAR_sub_GBS_genus)[base::rownames(sigtabG50_GBS), ], "matrix"))
+# add a column of NAs
+sigtabG50_GBS$DIFFABUN <- "NO"
+# if log2Foldchange > 0.6 and pvalue < 0.05, set as "UP" 
+sigtabG50_GBS$DIFFABUN[sigtabG50_GBS$beta > 0.1 & sigtabG50_GBS$qval < 0.1] <- "GBS_YES"
+# if log2Foldchange < -0.6 and pvalue < 0.05, set as "DOWN"
+sigtabG50_GBS$DIFFABUN[sigtabG50_GBS$beta < -0.1 & sigtabG50_GBS$qval < 0.1] <- "GBS_NO"
+
+# Now write down the name of genes beside the points...
+# Create a new column "delabel" to de, that will contain the name of genes differentially expressed (NA in case they are not)
+sigtabG50_GBS$delabel <- NA
+sigtabG50_GBS$delabel[sigtabG50_GBS$DIFFABUN != "NO"] <- sigtabG50_GBS$Family[sigtabG50_GBS$DIFFABUN != "NO"]
+write.table(sigtabG50_GBS, file = "ANCOMBC_genus_GBS_pre.txt", sep = "\t")
+
+
+out_asv = ancombc(phyloseq = QWAR_sub_GBS,
+                formula = "GBS_pre",
+                p_adj_method = "BH",
+                zero_cut = 0.975,
+                lib_cut = 0, #no filtering cause is grouped
+                group = NULL,
+                struc_zero = FALSE,
+                neg_lb = FALSE,
+                tol = 1e-5,
+                max_iter = 100,
+                conserve = TRUE,
+                alpha = 0.1,
+                global = F)
+
+res_asv = out_asv$res
+sigtabASV_GBS <- as.data.frame(res_asv)
+colnames(sigtabASV_GBS) <- c("beta","se","W","pval", "qval", "diff_abun")
+sigtabASV_GBS = cbind(as(sigtabASV_GBS, "data.frame"), as(tax_table(QWAR_sub_GBS)[base::rownames(sigtabASV_GBS), ], "matrix"))
+# add a column of NAs
+sigtabASV_GBS$DIFFABUN <- "NO"
+# if log2Foldchange > 0.6 and pvalue < 0.05, set as "UP" 
+sigtabASV_GBS$DIFFABUN[sigtabASV_GBS$beta > 0.1 & sigtabASV_GBS$qval < 0.1] <- "GBS_YES"
+# if log2Foldchange < -0.6 and pvalue < 0.05, set as "DOWN"
+sigtabASV_GBS$DIFFABUN[sigtabASV_GBS$beta < -0.1 & sigtabASV_GBS$qval < 0.1] <- "GBS_NO"
+
+# Now write down the name of genes beside the points...
+# Create a new column "delabel" to de, that will contain the name of genes differentially expressed (NA in case they are not)
+sigtabASV_GBS$delabel <- NA
+sigtabASV_GBS$delabel[sigtabASV_GBS$DIFFABUN != "NO"] <- sigtabASV_GBS$Family[sigtabASV_GBS$DIFFABUN != "NO"]
+write.table(sigtabASV_GBS, file = "ANCOMBC_ASV_GBS_pre.txt", sep = "\t")
+
+QWAR_sub_GBS_phylum <- tax_glom(QWAR_sub_GBS, taxrank="Phylum")
+
+QWAR_sub_GBS_phylum
+
+out_phy = ancombc(phyloseq = QWAR_sub_GBS_phylum,
+                formula = "GBS_pre",
+                p_adj_method = "BH",
+                zero_cut = 0.975,
+                lib_cut = 0, #no filtering cause is grouped
+                group = NULL,
+                struc_zero = FALSE,
+                neg_lb = FALSE,
+                tol = 1e-5,
+                max_iter = 100,
+                conserve = TRUE,
+                alpha = 0.1,
+                global = F)
+
+res_phy = out_phy$res
+sigtabphy_GBS <- as.data.frame(res_phy)
+colnames(sigtabphy_GBS) <- c("beta","se","W","pval", "qval", "diff_abun")
+sigtabphy_GBS = cbind(as(sigtabphy_GBS, "data.frame"), as(tax_table(QWAR_sub_GBS_phylum)[rownames(sigtabphy_GBS), ], "matrix"))
+# add a column of NAs
+sigtabphy_GBS$DIFFABUN <- "NO"
+# if log2Foldchange > 0.6 and pvalue < 0.05, set as "UP" 
+sigtabphy_GBS$DIFFABUN[sigtabphy_GBS$beta > 0.1 & sigtabphy_GBS$qval < 0.1] <- "GBS_YES"
+# if log2Foldchange < -0.6 and pvalue < 0.05, set as "DOWN"
+sigtabphy_GBS$DIFFABUN[sigtabphy_GBS$beta < -0.1 & sigtabphy_GBS$qval < 0.1] <- "GBS_NO"
+
+# Now write down the name of genes beside the points...
+# Create a new column "delabel" to de, that will contain the name of genes differentially expressed (NA in case they are not)
+sigtabphy_GBS$delabel <- NA
+sigtabphy_GBS$delabel[sigtabphy_GBS$DIFFABUN != "NO"] <- sigtabphy_GBS$Family[sigtabphy_GBS$DIFFABUN != "NO"]
+write.table(sigtabphy_GBS, file = "ANCOMBC_Phy_GBS_pre.txt", sep = "\t")
+
+
+#Volcano plot
+
+# The significantly differentially expressed genes are the ones found in the upper-left and upper-right corners.
+# Add a column to the data frame to specify if they are UP- or DOWN- regulated (log2FoldChange respectively positive or negative)
+
+# add a column of NAs
+sigtabG50_GBS$Colordiff <- "Not_different"
+# if log2Foldchange > 0.6 and pvalue < 0.05, set as "UP" 
+sigtabG50_GBS$Colordiff[sigtabG50_GBS$beta > 0.1 & sigtabG50_GBS$qval < 0.1] <- "Yes_GBS"
+# if log2Foldchange < -0.6 and pvalue < 0.05, set as "DOWN"
+sigtabG50_GBS$Colordiff[sigtabG50_GBS$beta < -0.1 & sigtabG50_GBS$qval < 0.1] <- "No_GBS"
+
+# Re-plot but this time color the points with "diffexpressed"
+p <- ggplot(data=sigtabG50_GBS, aes(x=beta, y=-log10(qval), col=Colordiff)) + geom_point() + theme_minimal()
+
+# Add lines as before...
+p2 <- p + geom_hline(yintercept=-log10(0.1), col="red") + ylim(0,1.5)
+
+#Step 1 Use pdf() function
+pdf(file = "Volcano_plot_genus_diffabund.pdf",   # The directory you want to save the file in
+    width = 6, # The width of the plot in inches
+    height = 4)# The height of the plot in inches
+# Step 2: Create the plot with R code
+p2
+# Step 3: Run dev.off() to create the file!
+dev.off()
+
+```
+
+
+#Get Beta Diversity
+```{r}
+
+QWAR_sub_GBS
+
+
+QWAR_sub_GBS_strepposit <- subset_samples(QWAR_sub_GBS, GBS_pre == "Yes")
+
+QWAR_sub_GBS_strepneg <- subset_samples(QWAR_sub_GBS, GBS_pre == "No")
+
+QWAR_sub_GBS_strepposit_neg <- subset_taxa(QWAR_sub_GBS_strepneg, Genus == "Streptococcus")
+
+#EXCEL SHEET with raw numbers. 
+QWAR_sub_GBS_strepposit_pos <- subset_taxa(QWAR_sub_GBS_strepposit, Genus == "Streptococcus")
+plot_bar(QWAR_sub_GBS_strepposit_pos, fill="Genus")
+
+plot_bar(QWAR_sub_GBS_strepposit_neg, fill="Genus")
+
+#GET betadiversity 
+
+QWAR_sub_GBS_norm <- rarefy_even_depth(QWAR_sub_GBS, sample.size = min(sample_sums(QWAR_sub_GBS)),rngseed = 8765, replace = TRUE, trimOTUs = TRUE, verbose = TRUE)
+
+keepTaxa = prevdt[(Prevalence >= 10 & TotalCounts > 3), TaxaID]
+# # Define new object with relative abundance
+# QWAR_sub_GBS_norm_RA = transform_sample_counts(QWAR_sub_GBS_norm, function(x) x / sum(x))
+# Filter this new object
+QWAR_sub_GBS_norm_trim = prune_taxa(keepTaxa, QWAR_sub_GBS_norm)
+# Calculate distances
+DistBC = phyloseq::distance(QWAR_sub_GBS_norm_trim, method = "bray")
+DistWF = phyloseq::distance(QWAR_sub_GBS_norm_trim, method = "wUniFrac")
+DistUWF = phyloseq::distance(QWAR_sub_GBS_norm_trim, method = "UniFrac")
+
+ordBC = ordinate(QWAR_sub_GBS_norm_trim, method = "PCoA", distance = DistBC)
+ordWF = ordinate(QWAR_sub_GBS_norm_trim, method = "PCoA", distance = DistWF)
+ordUWF = ordinate(QWAR_sub_GBS_norm_trim, method = "PCoA", distance = DistUWF)
+
+# plot_scree(ordBC, "Scree Plot: Bray-Curtis MDS")
+# plot_scree(ordUF, "Scree Plot: Weighted UniFrac MDS")
+
+sample_data(QWAR_sub_GBS_norm_trim)
+sample_variables(QWAR_sub_GBS_norm_trim)
+
+beta_GBS_BC <- plot_ordination(QWAR_sub_GBS_norm_trim, ordBC, color = "") +
+  ggtitle("PCoA: Bray-Curtis")
+
+beta_GBS_UWF <- plot_ordination(QWAR_sub_GBS_norm_trim, ordUWF, color = "GBS_pre") +
+  ggtitle("PCoA: Unweighted unifrac")
+
+beta_GBS_WF <- plot_ordination(QWAR_sub_GBS_norm_trim, ordWF, color = "GBS_pre") +
+  ggtitle("PCoA: Weighted unifrac")
+
+GBS_Data = data.frame(sample_data(QWAR_sub_GBS_norm_RA_trim))
+
+GBS_adonis_BC <- adonis2(DistBC ~ GBS_pre, data = GBS_Data , permutation=999)
+
+GBS_adonis_WF <- adonis2(DistWF ~ GBS_pre, data = GBS_Data , permutation=999)
+
+GBS_adonis_UWF <- adonis2(DistUWF ~ GBS_pre, data = GBS_Data , permutation=999)
+
+#Step 1 Use pdf() function
+pdf(file = "ADONIS_GBS_pre_Abs_BC.pdf",   # The directory you want to save the file in
+    width = 6, # The width of the plot in inches
+    height = 4)# The height of the plot in inches
+# Step 2: Create the plot with R code
+beta_GBS_BC
+# Step 3: Run dev.off() to create the file!
+dev.off()
+
+
+#Step 1 Use pdf() function
+pdf(file = "ADONIS_GBS_pre_Abs_UWF.pdf",   # The directory you want to save the file in
+    width = 6, # The width of the plot in inches
+    height = 4)# The height of the plot in inches
+# Step 2: Create the plot with R code
+beta_GBS_UWF
+# Step 3: Run dev.off() to create the file!
+dev.off()
+
+#Step 1 Use pdf() function
+pdf(file = "ADONIS_GBS_pre_Abs_WF.pdf",   # The directory you want to save the file in
+    width = 6, # The width of the plot in inches
+    height = 4)# The height of the plot in inches
+# Step 2: Create the plot with R code
+beta_GBS_WF
+# Step 3: Run dev.off() to create the file!
+dev.off()
+
+
+
+#Beta diversity with avg copy number
+pseq_meta <- sample_data(QWARqcat2)
+
+pseq_meta$Avgcopy_number <- as.numeric(as.numeric(gsub(",", "", pseq_meta$Avgcopy_number)))
+
+#GET betadiversity 
+
+QWAR_sub_GBS_norm <- rarefy_even_depth(QWAR_sub_GBS, sample.size = min(sample_sums(QWAR_sub_GBS)),rngseed = 8765, replace = TRUE, trimOTUs = TRUE, verbose = TRUE)
+
+keepTaxa = prevdt[(Prevalence >= 10 & TotalCounts > 3), TaxaID]
+# Define new ob <- <- ject with relative abundance
+QWAR_sub_GBS_norm_RA = transform_sample_counts(QWAR_sub_GBS_norm, function(x) x / sum(x))
+# Filter this new object
+QWAR_sub_GBS_norm_RA_trim = prune_taxa(keepTaxa, QWAR_sub_GBS_norm_RA)
+
+#eliminate no GBS samples
+QWAR_sub_GBS_norm_RA_trim_copynumb = subset_samples(QWAR_sub_GBS_norm_RA_trim, GBS_pre != "No")
+
+sample_data(QWAR_sub_GBS_norm_RA_trim_copynumb)$Avgcopy_number <- as.numeric(as.numeric(gsub(",", "", sample_data(QWAR_sub_GBS_norm_RA_trim_copynumb)$Avgcopy_number)))
+
+library(microViz)
+
+QWAR_sub_GBS_norm_RA_trim_copynumb <- QWAR_sub_GBS_norm_RA_trim_copynumb %>%
+  ps_mutate(LOGcopy_number = log(Avgcopy_number))
+
+sample_data(QWAR_sub_GBS_norm_RA_trim_copynumb)$LOGcopy_number
+
+
+DistBC_copynumber = phyloseq::distance(QWAR_sub_GBS_norm_RA_trim_copynumb, method = "bray")
+DistWF_copynumber = phyloseq::distance(QWAR_sub_GBS_norm_RA_trim_copynumb, method = "wUniFrac")
+DistUWF_copynumber = phyloseq::distance(QWAR_sub_GBS_norm_RA_trim_copynumb, method = "UniFrac")
+
+ordBC_copynumber = ordinate(QWAR_sub_GBS_norm_RA_trim_copynumb, method = "PCoA", distance = DistBC_copynumber)
+ordWF_copynumber = ordinate(QWAR_sub_GBS_norm_RA_trim_copynumb, method = "PCoA", distance = DistWF_copynumber)
+ordUWF_copynumber = ordinate(QWAR_sub_GBS_norm_RA_trim_copynumb, method = "PCoA", distance = DistUWF_copynumber)
+
+
+install.packages("wesanderson")
+
+library(wesanderson)
+
+
+pal <- wes_palette("GrandBudapest1", 100, type = "continuous")
+
+beta_GBS_BC_copynumber <- plot_ordination(QWAR_sub_GBS_norm_RA_trim_copynumb, ordBC_copynumber, color = "Avgcopy_number") +
+  ggtitle("PCoA: Bray-Curtis_copynumber")
+
+beta_GBS_BC_copynumber + scale_fill_viridis_c()
+  
+scale_colour_brewer(type="qual", palette="Set1", continuous_scale())
+
+?scale_color_brewer
+
+sp2+scale_color_gradient2(midpoint=mid, low="blue", mid="white",
+                     high="red", space ="Lab" )
+
+
+beta_GBS_BC_copynumberLOG <- plot_ordination(QWAR_sub_GBS_norm_RA_trim_copynumb, ordBC_copynumber, color = "LOGcopy_number") +
+  ggtitle("PCoA: Bray-Curtis_log")
+
+beta_GBS_BC_copynumberLOG <- beta_GBS_BC_copynumberLOG + scale_colour_gradient(low = "blue", high = "red", na.value = NA)
+
+beta_GBS_WF_copynumber <- plot_ordination(QWAR_sub_GBS_norm_RA_trim_copynumb, ordWF_copynumber, color = "Avgcopy_number") +
+  ggtitle("PCoA: Weighted unifrac_copynumber")
+
+beta_GBS_WF_copynumberLOG <- plot_ordination(QWAR_sub_GBS_norm_RA_trim_copynumb, ordWF_copynumber, color = "LOGcopy_number") +
+  ggtitle("PCoA: Weighted unifrac_log")
+
+beta_GBS_WF_copynumberLOG <- beta_GBS_WF_copynumberLOG + scale_colour_gradient(low = "blue", high = "red", na.value = NA)
+
+beta_GBS_UWF_copynumber <- plot_ordination(QWAR_sub_GBS_norm_RA_trim_copynumb, ordUWF_copynumber, color = "Avgcopy_number") +
+  ggtitle("PCoA: Unweighted unifrac_copynumber")
+
+beta_GBS_UWF_copynumberLOG <- plot_ordination(QWAR_sub_GBS_norm_RA_trim_copynumb, ordUWF_copynumber, color = "LOGcopy_number") +
+  ggtitle("PCoA: Unweighted unifrac_log")
+
+beta_GBS_UWF_copynumberLOG <- beta_GBS_UWF_copynumberLOG + scale_colour_gradient(low = "blue", high = "red", na.value = NA)
+
+
+#Step 1 Use pdf() function
+pdf(file = "ADONIS_copynumber_BC.pdf",   # The directory you want to save the file in
+    width = 6, # The width of the plot in inches
+    height = 4)# The height of the plot in inches
+# Step 2: Create the plot with R code
+beta_GBS_BC_copynumber
+# Step 3: Run dev.off() to create the file!
+dev.off()
+
+
+#Step 1 Use pdf() function
+pdf(file = "ADONIS_copynumber_BC_LOG.pdf",   # The directory you want to save the file in
+    width = 6, # The width of the plot in inches
+    height = 4)# The height of the plot in inches
+# Step 2: Create the plot with R code
+beta_GBS_BC_copynumberLOG
+# Step 3: Run dev.off() to create the file!
+dev.off()
+
+#Step 1 Use pdf() function
+pdf(file = "ADONIS_copynumber_WF.pdf",   # The directory you want to save the file in
+    width = 6, # The width of the plot in inches
+    height = 4)# The height of the plot in inches
+# Step 2: Create the plot with R code
+beta_GBS_WF_copynumber
+# Step 3: Run dev.off() to create the file!
+dev.off()
+
+#Step 1 Use pdf() function
+pdf(file = "ADONIS_copynumber_WF_LOG.pdf",   # The directory you want to save the file in
+    width = 6, # The width of the plot in inches
+    height = 4)# The height of the plot in inches
+# Step 2: Create the plot with R code
+beta_GBS_WF_copynumberLOG
+# Step 3: Run dev.off() to create the file!
+dev.off()
+
+
+#Step 1 Use pdf() function
+pdf(file = "ADONIS_copynumber_UWF.pdf",   # The directory you want to save the file in
+    width = 6, # The width of the plot in inches
+    height = 4)# The height of the plot in inches
+# Step 2: Create the plot with R code
+beta_GBS_UWF_copynumber
+# Step 3: Run dev.off() to create the file!
+dev.off()
+
+#Step 1 Use pdf() function
+pdf(file = "ADONIS_copynumber_UWF_LOG.pdf",   # The directory you want to save the file in
+    width = 6, # The width of the plot in inches
+    height = 4)# The height of the plot in inches
+# Step 2: Create the plot with R code
+beta_GBS_UWF_copynumberLOG
+# Step 3: Run dev.off() to create the file!
+dev.off()
+
+GBS_Data_cpnum = data.frame(sample_data(QWAR_sub_GBS_norm_RA_trim_copynumb))
+
+GBS_adonis_BC_copynumber <- adonis2(DistBC_copynumber ~ Avgcopy_number, data = GBS_Data_cpnum , permutation=999)
+
+GBS_adonis_BC_copynumberLOG <- adonis2(DistBC_copynumber ~ LOGcopy_number, data = GBS_Data_cpnum , permutation=999)
+
+GBS_adonis_WF_copynumber <- adonis2(DistWF_copynumber ~ Avgcopy_number, data = GBS_Data_cpnum , permutation=999)
+
+GBS_adonis_WF_copynumberLOG <- adonis2(DistWF_copynumber ~ LOGcopy_number, data = GBS_Data_cpnum , permutation=999)
+
+GBS_adonis_UWF_copynumber <- adonis2(DistUWF_copynumber ~ Avgcopy_number, data = GBS_Data_cpnum , permutation=999)
+
+GBS_adonis_UWF_copynumberLOG <- adonis2(DistUWF_copynumber ~ LOGcopy_number, data = GBS_Data_cpnum , permutation=999)
+
+
+```
+
+
+#LEFSE LDA
+
+```{r}
+
+#BiocManager::install("lefser")
+library(lefser)
+#remotes::install_github("yiluheihei/microbiomeMarker")
+library("microbiomeMarker")
+
+
+QWAR_sub_GBS
+
+
+xtabs(~GBS_pre, data = sample_data(QWAR_sub_GBS))
+colnames(tax_table(QWAR_sub_GBS)) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+
+
+sample_variables(QWAR_sub_GBS)
+QWAR_sub_GBS <- subset_samples(QWAR_sub_GBS, avg_EHI!="NA")        
+ 
+QWAR_sub_GBS <- subset_samples(QWAR_sub_GBS, avg_EHI!="NA")
+
+QWAR_sub_GBS_abusage <- subset_samples(QWAR_sub_GBS, HMI070!="[. ] Missing")
+
+QWAR_sub_GBS_abusage <- subset_samples(QWAR_sub_GBS, HMI070!="[.D] Don't know")
+
+
+
+GBS_Data$HMI070
+mm_lefse2 <- run_lefse(
+    QWAR_sub_GBS_abusage,
+    wilcoxon_cutoff = 0.01,
+    group = "FifteenPEHI",
+    kw_cutoff = 0.01,
+    multigrp_strat = TRUE,
+    lda_cutoff = 4
+)
+
+marker_table(mm_lefse2)
+
+```
+
+
+#QCAT
+```{r}
+# The filtering steps are considered supervised, because they relied on prior information that is external to this experiment (a taxonomic reference database).
+# Compute prevalence of each feature, store as data.frame
+prevdf <- apply(X = otu_table(QWAR_sub_GBS),
+               MARGIN = ifelse(taxa_are_rows(QWAR_sub_GBS), yes = 1, no = 2),
+               FUN = function(x){sum(x > 0)})
+# Add taxonomy and total read counts to this data.frame
+prevdf <- data.frame(Prevalence = prevdf,
+                    TotalAbundance = taxa_sums(QWAR_sub_GBS),
+                    tax_table(QWAR_sub_GBS))
+head(prevdf)
+# compute the average and total prevalences of the features in each phylum
+plyr::ddply(prevdf, "Phylum", function(df1){cbind(mean(df1$Prevalence),sum(df1$Prevalence))})
+# Define phyla to filter
+
+filterPhyla <- c("Ambiguous_taxa","NA", "Acidobacteriota", "Campilobacterota", "Cyanobacteria", "Deinococcota", "Elusimicrobiota", "Fibrobacterota", "Patescibacteria") # appear in 10 or less total
+# Filter entries with unidentified Phylum.
+QWAR_sub_GBS.2 <- subset_taxa(QWAR_sub_GBS, !Phylum %in% filterPhyla)
+QWAR_sub_GBS.2
+
+# Subset to the remaining phyla
+prevdf1 <- subset(prevdf, Phylum %in% get_taxa_unique(QWAR_sub_GBS.2, "Phylum"))
+# This next filtering step is completely unsupervised, relying only on the data in this experiment, and a parameter that we will choose after exploring the data.
+ggplot(prevdf1, aes(TotalAbundance, Prevalence / nsamples(QWAR_sub_GBS.2),color=Phylum)) +
+  # Include a guess for parameter
+  geom_hline(yintercept = 0.05, alpha = 0.5, linetype = 2) +  geom_point(size = 2, alpha = 0.7) +
+  scale_x_log10() +  xlab("Total Abundance") + ylab("Prevalence [Frac. Samples]") +
+  facet_wrap(~Phylum) + theme(legend.position="none")
+# Define prevalence threshold as 5% of total samples
+prevalenceThreshold <- 0.05 * nsamples(QWAR_sub_GBS.2) # 36.1
+# Execute prevalence filter, using `prune_taxa()` function
+keepTaxa <- rownames(prevdf1)[(prevdf1$Prevalence >= prevalenceThreshold)]
+QWARqcat <- prune_taxa(keepTaxa, QWAR_sub_GBS.2)
+QWARqcat
+# Then, we check whether there exists samples with low sequence depth
+QWARqcat <- prune_samples(sample_sums(QWARqcat) >= 5000, QWARqcat)
+QWARqcat
+
+# rarefication is used to simulate even number of reads per sample
+# Rarefaction can waste a lot of data and would not be necessary. See https://doi.org/10.1371/journal.pcbi.1003531.
+QWARqcat.rff <- rarefy_even_depth(QWARqcat, sample.size = min(sample_sums(QWARqcat)), rngseed = 123, replace = FALSE)
+QWARqcat.rff
+# Aggregate ASVs at genus level
+GBS_genus <- tax_glom(QWAR_sub_GBS.2, "Genus", NArm = TRUE)
+# filter out the taxa with nonzero proportion less than 20% Did not do it, and function downstream worked
+GBS_genus <- filter_taxa(GBS_genus, function(x) sum(x>0)>(0.2*length(x)), TRUE)
+GBS_genus
+GBS_genus.rel <- microbiome::transform(GBS_genus, "compositional")
+
+# If we would like to keep top 30 genera
+get_top_taxa <- function(physeq_obj, n, relative = TRUE, discard_other = FALSE, other_label = "Other"){
+  
+  #Define a temporary physeq object
+  ps_tmp <- physeq_obj
+  
+  #Check for 0 entries
+  smpl_sms <- phyloseq::sample_sums(ps_tmp)
+  if (0 %in% smpl_sms){
+    stop("Error: some samples contain 0 reads. These have to be removed to avoid
+         downstream problems.")
+  }
+  
+  #Extract the otu_table as a data.frame
+  otu_tbl <- phyloseq::otu_table(ps_tmp)
+  if (!phyloseq::taxa_are_rows(ps_tmp)){
+    otu_tbl <- t(otu_tbl)
+  }
+  
+  #Use relative abundances if requested
+  if (relative){
+    otu_tbl <- apply(otu_tbl, 2, function(x){
+      x / sum (x)
+    })
+  }
+  
+  #Update the phyloseq object
+  phyloseq::otu_table(ps_tmp) <- phyloseq::otu_table(otu_tbl, taxa_are_rows = T)
+  
+  #Get the top taxa names and discard or merge other taxa
+  abun_taxa <- names(sort(phyloseq::taxa_sums(ps_tmp), decreasing = TRUE)[1:n])
+  if (discard_other){
+    physeq_obj <- phyloseq::prune_taxa(abun_taxa, physeq_obj)
+  } else {
+    to_merge <- phyloseq::taxa_names(physeq_obj)
+    to_merge <- to_merge[!(to_merge %in% abun_taxa)]
+    physeq_obj <- merge_taxa(physeq_obj, to_merge)
+    tax_tbl <- phyloseq::tax_table(physeq_obj)
+    indx <- which(row.names(tax_tbl) %in% to_merge)
+    tax_tbl[indx,] <- other_label
+    phyloseq::tax_table(physeq_obj) <- tax_tbl
+  }
+  return(physeq_obj)
+}
+
+otu_table(GBS_genus)
+
+```
+
+```{r}
+# composition plot
+plot_bar(GBS_genus.rel, fill = "Phylum") + geom_bar(stat="identity") + facet_wrap(~GBS_pre, scales = "free_x", nrow=1)
+
+# show over-dispersion property
+# In every instance the variances were larger than could be expected under a Poisson model (overdispersed), especially at larger values of the common-scale mean. By definition, these OTUs are the most abundant, and receive the greatest interest in many studies. For rarefied counts the absolute scales are decreased and sometimes there are many fewer OTUs that pass filtering, but overdispersion is present in both cases and follows a clear sample-wide trend. 
+
+ncol(otu_table(QWAR_sub_GBS))
+ncol(otu_table(QWARqcat.rff))
+
+df = data.frame(Mean=apply(rbind(otu_table(QWARqcat), otu_table(QWARqcat.rff)), 1, mean), 
+                Variance=apply(rbind(otu_table(QWARqcat),otu_table(QWARqcat.rff)), 1, var),
+                Type = rep(c("Common Scale", "Rarefied"), each = ntaxa(QWARqcat)))
+ggplot(df, aes(Mean, Variance)) + 
+  geom_point(alpha=0.5, size=1.5) + 
+  facet_grid(~ Type) + 
+  scale_y_log10() +
+  scale_x_log10() +
+  geom_abline(intercept=0, slope=1, linetype=5, size=0.5, color="gray60") +
+  ggtitle("Common-Scale/Rarefied Variance versus Mean") +
+  theme(text=element_text(size=10),
+                      legend.position="top", plot.margin = unit(c(0, 0, 0, 0), "cm"))
+
+```
+
+
+### Quasi-Conditional Association Test (QCAT)
+```{r}
+
+# Aggregate ASVs at genus level
+GBS_genus <- tax_glom(QWARqcat2, "Genus", NArm = TRUE)
+# filter out the taxa with nonzero proportion less than 20% Did not do it, and function downstream worked
+GBS_genus <- filter_taxa(GBS_genus, function(x) sum(x>0)>(0.2*length(x)), TRUE)
+GBS_genus
+GBS_genus.rel <- microbiome::transform(GBS_genus, "compositional")
+
+GBS_genus.top30 <- get_top_taxa(GBS_genus, n = 30, discard_other = T)
+
+GBS_genus.top30
+
+# need to filter out the rare genera 
+otu_top30 <- t(otu_table(GBS_genus.top30)@.Data)
+head(otu_top30)
+tax_top30 <- tax_table(GBS_genus.top30)@.Data
+head(tax_top30)
+meta_top30 <- sample_data(GBS_genus.top30)
+head(meta_top30)
+tax4miL <- tax_top30[,1:6]
+colnames(tax4miL) <- paste0("Rank", 1:6)
+# tax_level <- paste0(c("K","P","C","O","F","G"), "|")
+# for (i in 1:6) {
+#   tax4miL[,i] <- paste0(tax_level[i], tax4miL[,i])
+# }
+# one-part test
+# asym & perm
+
+# QWARqcat_subset = subset_samples(QWARqcat, EHI_CBG_RANK_ACS2015 != "NA")
+# QWARqcat_subset = subset_samples(QWARqcat, FSQ_ANYISSUE3_R2 != "[. ] Missing")
+
+# 
+# QWARqcat.genus <- tax_glom(QWARqcat_subset2, "Genus", NArm = TRUE)
+# QWARqcat.genus.top30 <- get_top_taxa(QWARqcat.genus, n = 30, discard_other = T)
+
+QWARqcat2 = subset_samples(QWARqcat, GBS_pre != "No")
+
+pseq_meta <- sample_data(QWARqcat2)
+
+pseq_meta$Avgcopy_number <- as.numeric(as.numeric(gsub(",", "", pseq_meta$Avgcopy_number)))
+
+
+# str(pseq_meta$Avgcopy_number)
+res_GBS <- QCAT(OTU = otu_top30, X = matrix(pseq_meta$Avgcopy_number, ncol=1), Tax = tax4miL, n.perm = 1000) # continuous covariate
+res_GBS
+
+# two-part test, which part contribute most
+# zero part: models presence/absence of a taxon in the sample
+# positive part: models positive counts at the presence
+QCAT_GEE(OTU = otu_top30, X = matrix(pseq_meta$Avgcopy_number, ncol=1), Tax = tax4miL, n.perm = 100) 
+# ignore the taxonomic tree
+QCAT(OTU = otu_top30, X = matrix(pseq_meta$Avgcopy_number, ncol=1), n.perm = 100)
+
+```
+
+### Zero-Inflated Generalized Dirichlet Multinomial Test (ZIGDM)
+```{r}
+# perform differential-mean test
+ZIGDM(OTU = otu_top30, X4mean = matrix(pseq_meta$Avgcopy_number, ncol=1), Tax = tax4miL, n.perm = 1000)
+# perform differential-mean test
+ZIGDM(OTU = otu_top30, X4mean = matrix(pseq_meta$Avgcopy_number, ncol=1), n.perm = 1000)
+# perform differential-dispersion test
+ZIGDM(OTU = otu_top30, X4disp = matrix(pseq_meta$Avgcopy_number, ncol=1), test.type = "Disp", Tax = tax4miL, n.perm = 1000)
+# perform differential-presence-absence-frequency test
+ZIGDM(OTU = otu_top30, X4zero = matrix(pseq_meta$Avgcopy_number, ncol=1), test.type = "Zero", Tax = tax4miL, n.perm = 1000)
+```
+
+
+#Strepto abundance in samples
+```{r}
+QWAR_sub_GBS
+
+options(scipen=999)
+
+QWAR_sub_GBSStrep <- subset_taxa(QWAR_sub_GBS, Genus == "Streptococcus")
+
+tax_table(QWAR_sub_GBSStrep)
+
+QWAR_sub_GBS_genus <- tax_glom(QWAR_sub_GBS, "Genus", NArm = TRUE)
+
+QWAR_sub_GBS_genus.rel <- microbiome::transform(QWAR_sub_GBS_genus, "compositional")
+taxa_names()
+QWAR_sub_GBS_genus_strep <- subset_taxa(QWAR_sub_GBS_genus, Genus == "Streptococcus")
+
+QWAR_sub_GBS_genus.rel_strep <- subset_taxa(QWAR_sub_GBS_genus.rel, Genus == "Streptococcus")
+
+absolute_abundance_strep <- t(otu_table(QWAR_sub_GBS_genus_strep))
+
+absolute_abundance_strep <- as.data.frame(absolute_abundance_strep)
+
+relative_abundance_strep <- t(otu_table(QWAR_sub_GBS_genus.rel_strep))
+
+relative_abundance_strep <- as.data.frame(relative_abundance_strep)
+
+Strept_abun <- absolute_abundance_strep %>%
+  dplyr::mutate(Relabund=relative_abundance_strep$fd496fd32dc8c08ade2e8b6c9d8ee13d)
+
+QWAR_sub_GBS_species <- tax_glom(QWAR_sub_GBS, "Species", NArm = TRUE)
+
+QWAR_sub_GBS_spec.rel <- microbiome::transform(QWAR_sub_GBS_species, "compositional")
+
+
+QWAR_sub_GBS_species_strepaga <- subset_taxa(QWAR_sub_GBS_species, Species == "Streptococcus_agalactiae")
+
+QWAR_sub_GBS_spec.rel_strepagal <- subset_taxa(QWAR_sub_GBS_spec.rel, Species == "Streptococcus_agalactiae")
+
+absolute_abundance_strepagal <- t(otu_table(QWAR_sub_GBS_species_strepaga))
+
+absolute_abundance_strepagal <- as.data.frame(absolute_abundance_strepagal)
+
+relative_abundance_strepagal <- t(otu_table(QWAR_sub_GBS_spec.rel_strepagal))
+
+relative_abundance_strepagal <- as.data.frame(relative_abundance_strepagal)
+
+GBS_pre <- sample_data(QWAR_sub_GBS_species_strepaga)$GBS_pre
+
+GBS_pre <- as.data.frame(GBS_pre)
+
+avg_copy <- sample_data(QWAR_sub_GBS_species_strepaga)$Avgcopy_number
+
+avg_copy <- as.data.frame(avg_copy)
+
+Strept_abun <- absolute_abundance_strep %>%
+  dplyr::mutate(Relabund_strep=relative_abundance_strep$fd496fd32dc8c08ade2e8b6c9d8ee13d,Absolute_strep_aga= absolute_abundance_strepagal$e3055f1b3a2ef5ffe239567f02e0e758,Relabund_strep_aga=relative_abundance_strepagal$e3055f1b3a2ef5ffe239567f02e0e758, GBS_pre=GBS_pre$GBS_pre, avg_copy=avg_copy$avg_copy)
+
+write.table(Strept_abun, file = "Abundance_strep_GBS_Samples.txt", sep = "\t")
+
+head(GBS_Data)
+```
+
+#Bacteroides abundance in samples
+```{r}
+QWAR_sub_GBS
+
+options(scipen=999)
+
+QWAR_sub_GBSbact <- subset_taxa(QWAR_sub_GBS, Genus == "Bacteroides")
+
+bacteroides_species <- as.data.frame(tax_table(QWAR_sub_GBSbact))
+write.table(bacteroides_species, file="bacteroides_species.txt", sep = "\t")
+
+QWAR_sub_GBS_genus <- tax_glom(QWAR_sub_GBS, "Genus", NArm = TRUE)
+
+QWAR_sub_GBS_genus.rel <- microbiome::transform(QWAR_sub_GBS_genus, "compositional")
+taxa_names()
+QWAR_sub_GBS_genus_Bact <- subset_taxa(QWAR_sub_GBS_genus, Genus == "Bacteroides")
+
+QWAR_sub_GBS_genus.rel_bact <- subset_taxa(QWAR_sub_GBS_genus.rel, Genus == "Bacteroides")
+
+absolute_abundance_bact <- t(otu_table(QWAR_sub_GBS_genus_Bact))
+
+absolute_abundance_bact <- as.data.frame(absolute_abundance_bact)
+
+relative_abundance_bact <- t(otu_table(QWAR_sub_GBS_genus.rel_bact))
+
+relative_abundance_bact <- as.data.frame(relative_abundance_bact)
+
+Bact_abun <- absolute_abundance_bact %>%
+  dplyr::mutate(Relabund=relative_abundance_bact$`99deb3c5ecb022ec05609ebd1112a557`, GBS_pre=GBS_pre$GBS_pre, avg_copy=avg_copy$avg_copy)
+
+write.table(Bact_abun, file = "Bacteroides_abundance.txt", sep="\t")
+
+QWAR_sub_GBS_species <- tax_glom(QWAR_sub_GBS, "Species", NArm = TRUE)
+
+QWAR_sub_GBS_spec.rel <- microbiome::transform(QWAR_sub_GBS_species, "compositional")
+
+
+QWAR_sub_GBS_species_bact_theta <- subset_taxa(QWAR_sub_GBS_species, Species == "Bacteroides_thetaiotaomicron")
+
+QWAR_sub_GBS_spec.rel_strepagal <- subset_taxa(QWAR_sub_GBS_spec.rel, Species == "Streptococcus_agalactiae")
+
+absolute_abundance_strepagal <- t(otu_table(QWAR_sub_GBS_species_strepaga))
+
+absolute_abundance_strepagal <- as.data.frame(absolute_abundance_strepagal)
+
+relative_abundance_strepagal <- t(otu_table(QWAR_sub_GBS_spec.rel_strepagal))
+
+relative_abundance_strepagal <- as.data.frame(relative_abundance_strepagal)
+
+GBS_pre <- sample_data(QWAR_sub_GBS_species_strepaga)$GBS_pre
+
+GBS_pre <- as.data.frame(GBS_pre)
+
+avg_copy <- sample_data(QWAR_sub_GBS_species_strepaga)$Avgcopy_number
+
+avg_copy <- as.data.frame(avg_copy)
+
+Strept_abun <- absolute_abundance_strep %>%
+  dplyr::mutate(Relabund_strep=relative_abundance_strep$fd496fd32dc8c08ade2e8b6c9d8ee13d,Absolute_strep_aga= absolute_abundance_strepagal$e3055f1b3a2ef5ffe239567f02e0e758,Relabund_strep_aga=relative_abundance_strepagal$e3055f1b3a2ef5ffe239567f02e0e758, GBS_pre=GBS_pre$GBS_pre, avg_copy=avg_copy$avg_copy)
+
+write.table(Strept_abun, file = "Abundance_strep_GBS_Samples.txt", sep = "\t")
+
+
+head(GBS_Data)
+```
+
